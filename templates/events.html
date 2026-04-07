@@ -19,6 +19,9 @@
                     <th>ID</th>
                     <th>Puerta</th>
                     <th>Estado</th>
+                    <th>RSSI</th>
+                    <th>SNR</th>
+                    <th>Batería</th>
                     <th>Hora</th>
                 </tr>
             </thead>
@@ -28,6 +31,9 @@
                     <td>{{ row.id }}</td>
                     <td>{{ row.device_id }}</td>
                     <td>{{ row.state }}</td>
+                    <td>{{ row.rssi }}</td>
+                    <td>{{ row.snr }}</td>
+                    <td>{{ row.battery }}</td>
                     <td>{{ row.timestamp_str }}</td>
                 </tr>
                 {% endfor %}

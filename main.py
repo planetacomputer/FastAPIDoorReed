@@ -31,8 +31,11 @@ CREATE TABLE IF NOT EXISTS door_events (
     id INT AUTO_INCREMENT PRIMARY KEY,
     device_id VARCHAR(50),
     state VARCHAR(20),
+    rssi INT,            -- Received Signal Strength Indicator
+    snr DECIMAL(5,2),    -- Signal-to-Noise Ratio, e.g., 7.25
+    battery DECIMAL(4,2),-- Battery voltage in volts, e.g., 3.87
     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-)
+);
 """)
 conn.commit()
 cursor.close()
@@ -44,8 +47,8 @@ def receive_event(event: dict):
     cursor = conn.cursor()
 
     cursor.execute(
-        "INSERT INTO door_events (device_id, state) VALUES (%s, %s)",
-        (event["device_id"], event["state"])
+        "INSERT INTO door_events (device_id, state, rssi, snr, battery) VALUES (%s, %s, %s, %s, %s)",
+        (event["device_id"], event["state"], event["rssi"], event["snr"], event["battery"])
     )
     conn.commit()
 
