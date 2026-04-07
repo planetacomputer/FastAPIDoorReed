@@ -31,8 +31,12 @@
                     <td>{{ row.id }}</td>
                     <td>{{ row.device_id }}</td>
                     <td>{{ row.state }}</td>
-                    <td>{{ row.rssi }}</td>
-                    <td>{{ row.snr }}</td>
+                    <td title="{{ row.rssi_status }}">
+                        <span class="w3-tag w3-round {{ row.rssi_class }} w3-padding-small" title="{{ row.rssi_status }}" aria-label="RSSI status: {{ row.rssi_status }}">{{ row.rssi }}</span>
+                    </td>
+                    <td title="{{ row.snr_status }}">
+                        <span class="w3-tag w3-round {{ row.snr_class }} w3-padding-small" title="{{ row.snr_status }}" aria-label="SNR status: {{ row.snr_status }}">{{ row.snr }}</span>
+                    </td>
                     <td>{{ row.battery }}</td>
                     <td>{{ row.timestamp_str }}</td>
                 </tr>

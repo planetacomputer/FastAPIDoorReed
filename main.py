@@ -21,6 +21,14 @@ pool = mysql.connector.pooling.MySQLConnectionPool(
     **DB_CONFIG
 )
 
+# Thresholds for RSSI and SNR (tune these for your environment)
+# RSSI: higher is better (in dBm, usually negative numbers: -70 is better than -100)
+RSSI_GOOD = -80   # RSSI stronger (less negative) than -80 is good
+RSSI_POOR = -100  # RSSI weaker than -100 is poor
+# SNR: higher is better
+SNR_GOOD = 5      # SNR above 5 is good
+SNR_POOR = 0      # SNR below 0 is poor
+
 # -----------------------------
 # Create table if not exists
 # -----------------------------
@@ -69,7 +77,40 @@ def show_events(request: Request):
     rows = cursor.fetchall()
     for row in rows:
         # Format directly to string in Spanish
+        # timestamp from MySQL is a datetime object
         row["timestamp_str"] = row["timestamp"].strftime("%a %d %b %H:%M")
+
+        # Compute RSSI status & CSS class
+        try:
+            rssi_val = float(row.get("rssi") if row.get("rssi") is not None else 0)
+        except Exception:
+            rssi_val = 0.0
+
+        if rssi_val >= RSSI_GOOD:
+            row["rssi_status"] = "Good"
+            row["rssi_class"] = "w3-green"
+        elif rssi_val <= RSSI_POOR:
+            row["rssi_status"] = "Poor"
+            row["rssi_class"] = "w3-red"
+        else:
+            row["rssi_status"] = "Fair"
+            row["rssi_class"] = "w3-yellow"
+
+        # Compute SNR status & CSS class
+        try:
+            snr_val = float(row.get("snr") if row.get("snr") is not None else 0)
+        except Exception:
+            snr_val = 0.0
+
+        if snr_val >= SNR_GOOD:
+            row["snr_status"] = "Good"
+            row["snr_class"] = "w3-green"
+        elif snr_val <= SNR_POOR:
+            row["snr_status"] = "Poor"
+            row["snr_class"] = "w3-red"
+        else:
+            row["snr_status"] = "Fair"
+            row["snr_class"] = "w3-yellow"
     cursor.close()
     conn.close()
 
