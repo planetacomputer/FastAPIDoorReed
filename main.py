@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS door_events (
     id INT AUTO_INCREMENT PRIMARY KEY,
     device_id VARCHAR(50),
     state VARCHAR(20),
+    contador INT DEFAULT 1, -- Count of events for this device
     rssi INT,            -- Received Signal Strength Indicator
     snr DECIMAL(5,2),    -- Signal-to-Noise Ratio, e.g., 7.25
     battery DECIMAL(4,2),-- Battery voltage in volts, e.g., 3.87
@@ -53,10 +54,11 @@ conn.close()
 def receive_event(event: dict):
     conn = pool.get_connection()
     cursor = conn.cursor()
-
+    #  split event['state'] by '|' and take the second part as state, third part as contador
+    state_parts = event['state'].split('|')
     cursor.execute(
-        "INSERT INTO door_events (device_id, state, rssi, snr, battery) VALUES (%s, %s, %s, %s, %s)",
-        (event["device_id"], event["state"], event["rssi"], event["snr"], event["battery"])
+        "INSERT INTO door_events (device_id, state, contador, rssi, snr, battery) VALUES (%s, %s, %s, %s, %s, %s)",
+        (event["device_id"], state_parts[1], int(state_parts[2]), event["rssi"], event["snr"], event["battery"])
     )
     conn.commit()
 
@@ -78,7 +80,7 @@ def show_events(request: Request):
     for row in rows:
         # Format directly to string in Spanish
         # timestamp from MySQL is a datetime object
-        row["timestamp_str"] = row["timestamp"].strftime("%a %d %b %H:%M")
+        row["timestamp_str"] = row["timestamp"].strftime("%a %d %b %H:%M:%S")  # e.g., "Lun 01 Ene 12:00:00"
 
         # Compute RSSI status & CSS class
         try:
@@ -104,13 +106,13 @@ def show_events(request: Request):
 
         if snr_val >= SNR_GOOD:
             row["snr_status"] = "Good"
-            row["snr_class"] = "w3-green"
+            row["snr_class"] = "w3-teal"
         elif snr_val <= SNR_POOR:
             row["snr_status"] = "Poor"
-            row["snr_class"] = "w3-red"
+            row["snr_class"] = "w3-pink"
         else:
             row["snr_status"] = "Fair"
-            row["snr_class"] = "w3-yellow"
+            row["snr_class"] = "w3-khaki"
     cursor.close()
     conn.close()
 

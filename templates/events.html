@@ -2,9 +2,11 @@
 <html>
 <head>
     <meta http-equiv="refresh" content="5">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Door Events</title>
     <!-- W3.CSS CDN -->
     <link rel="stylesheet" href="/static/w3.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
 </head>
 <body class="w3-light-grey">
 
@@ -13,13 +15,16 @@
     </div>
 
     <div class="w3-container">
+        <div class="table-responsive" style="overflow-x:auto;">
         <table class="w3-table w3-bordered w3-striped w3-white w3-card-4">
             <thead class="w3-brown">
                 <tr>
                     <th>ID</th>
                     <th>Puerta</th>
                     <th>Estado</th>
-                    <th>RSSI</th>
+                    <th>Contador</th>
+                    <th > RSSI <span class="w3-tooltip"><span style="position:absolute;left:0;bottom:28px"
+class="w3-text w3-tag">9 million inhabitants</span> <i class="w3-badge fa fa-info w3-taupe"></i></span></th>
                     <th>SNR</th>
                     <th>Batería</th>
                     <th>Hora</th>
@@ -30,7 +35,10 @@
                 <tr>
                     <td>{{ row.id }}</td>
                     <td>{{ row.device_id }}</td>
-                    <td>{{ row.state }}</td>
+                    <!-- if row.state is 0 write OPENED, ELSE write CLOSED -->
+                     <!-- w3 color red -->
+                    <td><span class="w3-tag w3-round w3-{% if row.state == "0" %}green{% else %}red{% endif %}"><b>{{ "ABIERTA" if row.state == "0" else "CERRADA" }}</b></span></td>
+                    <td>{{ row.contador }}</td>
                     <td title="{{ row.rssi_status }}">
                         <span class="w3-tag w3-round {{ row.rssi_class }} w3-padding-small" title="{{ row.rssi_status }}" aria-label="RSSI status: {{ row.rssi_status }}">{{ row.rssi }}</span>
                     </td>
@@ -43,6 +51,7 @@
                 {% endfor %}
             </tbody>
         </table>
+        </div>
     </div>
 
     <div class="w3-container w3-center w3-padding-16">

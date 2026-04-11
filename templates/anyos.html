@@ -1,0 +1,12 @@
+<!-- mosaico con los años que hay en la tabla door_events, cada año es un enlace a /events?year=YYYY -->
+<!-- al hacer clic en un año, se muestran los meses de ese año en una nueva pagina, tambien los meses en mosaico -->
+<div class="w3-container">
+    <h3>Años</h3>
+    <div class="w3-row">
+        {% for year in years %}
+        <div class="w3-col s4 m4 l4">
+            <a href="/events?year={{ year }}" class="w3-button w3-block w3-blue">{{ year }}</a>
+        </div>
+        {% endfor %}
+    </div>
+</div>
