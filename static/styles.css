@@ -1,0 +1,8 @@
+/* Flash animation for a newly inserted row: show highlight for 2s */
+@keyframes flash-bg {
+    0% { background-color: transparent; }
+    30% { background-color: rgba(255, 235, 59, 0.9); }
+    100% { background-color: transparent; }
+}
+/* play animation once over 2 seconds */
+tr.flash-row td { animation: flash-bg 2s ease-in-out 1; }

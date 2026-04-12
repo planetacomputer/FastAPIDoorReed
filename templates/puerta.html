@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Puerta - Events by Day</title>
+    <link rel="icon" href="data:;base64,iVBORw0KGgo=">
+    <link rel="stylesheet" href="/static/w3.css">
+    <style>
+        .day-header { cursor: pointer;}
+        .day-container { margin-bottom: 12px; }
+        .collapse { display: none; }
+    </style>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            document.querySelectorAll('.day-header').forEach(function (h) {
+                h.addEventListener('click', function () {
+                    const id = this.getAttribute('data-target');
+                    const cont = document.getElementById(id);
+                    if (!cont) return;
+                    if (cont.classList.contains('collapse')) {
+                        cont.classList.remove('collapse');
+                    } else {
+                        cont.classList.add('collapse');
+                    }
+                });
+            });
+            // expand today's group if present
+            const todayKey = new Date().toISOString().slice(0,10);
+            const el = document.getElementById('group-' + todayKey);
+            if (el) el.classList.remove('collapse');
+        });
+    </script>
+</head>
+<body class="w3-light-grey">
+    <div class="w3-container w3-center w3-padding-8">
+        <h2 class="w3-text-brown">Puerta - Eventos por día</h2>
+    </div>
+
+    <div class="w3-container">
+        {% for key, group in groups.items() %}
+        <div class="day-container w3-card-2 w3-padding-small">
+            <div class="day-header w3-bar w3-light-grey" data-target="group-{{ key }}">
+                <div class="w3-left"><b>{{ group.label }}</b></div>
+                <div class="w3-right w3-text-grey"><span class="w3-tag w3-round w3-green w3-border w3-border-white">{{ group.minutes_span_label }}&nbsp;</span></div>
+            </div>
+            <div id="group-{{ key }}" class="collapse w3-margin-top">
+                <table class="w3-table w3-striped w3-bordered">
+                    <thead class="w3-light-grey">
+                        <tr>
+                            <th>Estado</th>
+                            <th>Hora</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in group.rows %}
+                        <tr>
+                            <td><span class="w3-tag w3-round w3-{% if row.state == "0" %}green{% else %}red{% endif %}">{{ "ABIERTA" if row.state == "0" else "CERRADA" }}</span></td>
+                             <td>{{ row.timestamp_str }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</body>
+</html>
