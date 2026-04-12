@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from datetime import datetime
+import calendar
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import mysql.connector
@@ -211,14 +212,22 @@ def show_puerta(request: Request):
         try:
             rows_for_day = g["rows"]
             if rows_for_day:
-                first_ts = rows_for_day[0].get("timestamp")
-                last_ts = rows_for_day[-1].get("timestamp")
-                if isinstance(first_ts, datetime) and isinstance(last_ts, datetime):
-                    delta_minutes = int((first_ts - last_ts).total_seconds() / 60)
+                # rows are ordered newest -> oldest
+                newest_ts = rows_for_day[0].get("timestamp")
+                oldest_ts = rows_for_day[-1].get("timestamp")
+                if isinstance(newest_ts, datetime) and isinstance(oldest_ts, datetime):
+                    delta_minutes = int((newest_ts - oldest_ts).total_seconds() / 60)
+                    # store first (earliest) and last (latest) times for display
+                    g["first_time"] = oldest_ts.strftime("%H:%M")
+                    g["last_time"] = newest_ts.strftime("%H:%M")
                 else:
                     delta_minutes = 0
+                    g["first_time"] = "--:--"
+                    g["last_time"] = "--:--"
             else:
                 delta_minutes = 0
+                g["first_time"] = "--:--"
+                g["last_time"] = "--:--"
         except Exception:
             delta_minutes = 0
         # store numeric span and human-friendly label (e.g., "1h 20m")
@@ -236,6 +245,222 @@ def show_puerta(request: Request):
     # connections handled inside helpers
 
     return templates.TemplateResponse(request=request, name="puerta.html", context={"groups": groups})
+
+
+@app.get("/puerta_calendar", response_class=HTMLResponse)
+def show_puerta_calendar(request: Request):
+    """Render events for a month inside a calendar grid. Query params: year, month (ints)."""
+    # parse year/month from query params, default to current
+    q = request.query_params
+    now = datetime.now()
+    try:
+        year = int(q.get('year', now.year))
+    except Exception:
+        year = now.year
+    try:
+        month = int(q.get('month', now.month))
+    except Exception:
+        month = now.month
+
+    # fetch a generous number of rows to include the month
+    rows = fetch_rows_from_db(limit=5000)
+
+    # build groups for the requested month
+    from collections import OrderedDict
+    groups = OrderedDict()
+    for row in rows:
+        try:
+            ts_dt = row.get('timestamp')
+            if ts_dt.year != year or ts_dt.month != month:
+                continue
+            day_key = ts_dt.strftime("%Y-%m-%d")
+            day_label = ts_dt.strftime("%A %d %b %Y")
+        except Exception:
+            continue
+        if day_key not in groups:
+            groups[day_key] = {"label": day_label, "rows": []}
+        groups[day_key]["rows"].append(row)
+
+    # compute same per-group metadata as /puerta (first/last times and minutes label)
+    for key, g in groups.items():
+        try:
+            rows_for_day = g["rows"]
+            if rows_for_day:
+                newest_ts = rows_for_day[0].get("timestamp")
+                oldest_ts = rows_for_day[-1].get("timestamp")
+                if isinstance(newest_ts, datetime) and isinstance(oldest_ts, datetime):
+                    delta_minutes = int((newest_ts - oldest_ts).total_seconds() / 60)
+                    g["first_time"] = oldest_ts.strftime("%H:%M")
+                    g["last_time"] = newest_ts.strftime("%H:%M")
+                else:
+                    delta_minutes = 0
+                    g["first_time"] = "--:--"
+                    g["last_time"] = "--:--"
+            else:
+                delta_minutes = 0
+                g["first_time"] = "--:--"
+                g["last_time"] = "--:--"
+        except Exception:
+            delta_minutes = 0
+            g["first_time"] = "--:--"
+            g["last_time"] = "--:--"
+        g["minutes_span"] = delta_minutes
+        if delta_minutes >= 60:
+            hours = delta_minutes // 60
+            minutes_only = delta_minutes % 60
+            if minutes_only:
+                g["minutes_span_label"] = f"{hours}h {minutes_only}m"
+            else:
+                g["minutes_span_label"] = f"{hours}h"
+        else:
+            g["minutes_span_label"] = f"{delta_minutes} min"
+
+    # prepare a calendar weeks grid for the month
+    cal = calendar.Calendar(firstweekday=0)  # Monday=0
+    month_days = cal.monthdayscalendar(year, month)
+    # each week is a list of day numbers (0 means padding day)
+
+    # build weeks structure with day info and events list
+    weeks = []
+    for week in month_days:
+        week_cells = []
+        for d in week:
+            if d == 0:
+                week_cells.append({"day": 0, "date_key": None, "events": []})
+            else:
+                date_key = f"{year:04d}-{month:02d}-{d:02d}"
+                grp = groups.get(date_key)
+                events = grp["rows"] if grp else []
+                meta = {
+                    "day": d,
+                    "date_key": date_key,
+                    "events": events,
+                    "first_time": grp.get("first_time") if grp else "--:--",
+                    "last_time": grp.get("last_time") if grp else "--:--",
+                    "minutes_span_label": grp.get("minutes_span_label") if grp else "0 min",
+                }
+                week_cells.append(meta)
+        weeks.append(week_cells)
+
+    # helper: previous and next month for navigation
+    prev_month = month - 1
+    prev_year = year
+    if prev_month < 1:
+        prev_month = 12
+        prev_year -= 1
+    next_month = month + 1
+    next_year = year
+    if next_month > 12:
+        next_month = 1
+        next_year += 1
+
+    context = {
+        "year": year,
+        "month": month,
+    "month_name": datetime(year, month, 1).strftime("%B").capitalize(),
+        "weeks": weeks,
+        "groups": groups,
+        "prev_year": prev_year,
+        "prev_month": prev_month,
+        "next_year": next_year,
+        "next_month": next_month,
+    }
+    # provide today's key so templates do not rely on now() helper
+    context["today_key"] = now.strftime("%Y-%m-%d")
+    return templates.TemplateResponse(request=request, name="puerta_calendar.html", context=context)
+
+
+@app.get("/puerta_list", response_class=HTMLResponse)
+def show_puerta_list(request: Request):
+    """Render events grouped by day for a month as a vertical list with collapsible day sections.
+    Query params: year, month (ints)."""
+    q = request.query_params
+    now_dt = datetime.now()
+    try:
+        year = int(q.get('year', now_dt.year))
+    except Exception:
+        year = now_dt.year
+    try:
+        month = int(q.get('month', now_dt.month))
+    except Exception:
+        month = now_dt.month
+
+    # fetch rows (could be optimized later to query only month)
+    rows = fetch_rows_from_db(limit=5000)
+
+    from collections import OrderedDict
+    groups = OrderedDict()
+    for row in rows:
+        try:
+            ts_dt = row.get('timestamp')
+            if ts_dt.year != year or ts_dt.month != month:
+                continue
+            day_key = ts_dt.strftime("%Y-%m-%d")
+            day_label = ts_dt.strftime("%A %d %b %Y")
+        except Exception:
+            continue
+        if day_key not in groups:
+            groups[day_key] = {"label": day_label, "rows": []}
+        groups[day_key]["rows"].append(row)
+
+    # compute per-group metadata
+    for key, g in groups.items():
+        try:
+            rows_for_day = g["rows"]
+            if rows_for_day:
+                newest_ts = rows_for_day[0].get("timestamp")
+                oldest_ts = rows_for_day[-1].get("timestamp")
+                if isinstance(newest_ts, datetime) and isinstance(oldest_ts, datetime):
+                    delta_minutes = int((newest_ts - oldest_ts).total_seconds() / 60)
+                    g["first_time"] = oldest_ts.strftime("%H:%M")
+                    g["last_time"] = newest_ts.strftime("%H:%M")
+                else:
+                    delta_minutes = 0
+                    g["first_time"] = "--:--"
+                    g["last_time"] = "--:--"
+            else:
+                delta_minutes = 0
+                g["first_time"] = "--:--"
+                g["last_time"] = "--:--"
+        except Exception:
+            delta_minutes = 0
+            g["first_time"] = "--:--"
+            g["last_time"] = "--:--"
+        g["minutes_span"] = delta_minutes
+        if delta_minutes >= 60:
+            hours = delta_minutes // 60
+            minutes_only = delta_minutes % 60
+            if minutes_only:
+                g["minutes_span_label"] = f"{hours}h {minutes_only}m"
+            else:
+                g["minutes_span_label"] = f"{hours}h"
+        else:
+            g["minutes_span_label"] = f"{delta_minutes} min"
+
+    # navigation
+    prev_month = month - 1
+    prev_year = year
+    if prev_month < 1:
+        prev_month = 12
+        prev_year -= 1
+    next_month = month + 1
+    next_year = year
+    if next_month > 12:
+        next_month = 1
+        next_year += 1
+
+    context = {
+        "year": year,
+        "month": month,
+    "month_name": datetime(year, month, 1).strftime("%B").capitalize(),
+        "groups": groups,
+        "prev_year": prev_year,
+        "prev_month": prev_month,
+        "next_year": next_year,
+        "next_month": next_month,
+        "today_key": now_dt.strftime("%Y-%m-%d")
+    }
+    return templates.TemplateResponse(request=request, name="puerta_list.html", context=context)
 
 
 @app.websocket("/ws/events")

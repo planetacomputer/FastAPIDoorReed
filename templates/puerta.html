@@ -5,11 +5,7 @@
     <title>Puerta - Events by Day</title>
     <link rel="icon" href="data:;base64,iVBORw0KGgo=">
     <link rel="stylesheet" href="/static/w3.css">
-    <style>
-        .day-header { cursor: pointer;}
-        .day-container { margin-bottom: 12px; }
-        .collapse { display: none; }
-    </style>
+    <link rel="stylesheet" href="/static/styles.css">
     <script>
         document.addEventListener('DOMContentLoaded', function () {
             document.querySelectorAll('.day-header').forEach(function (h) {
@@ -41,7 +37,11 @@
         <div class="day-container w3-card-2 w3-padding-small">
             <div class="day-header w3-bar w3-light-grey" data-target="group-{{ key }}">
                 <div class="w3-left"><b>{{ group.label }}</b></div>
-                <div class="w3-right w3-text-grey"><span class="w3-tag w3-round w3-green w3-border w3-border-white">{{ group.minutes_span_label }}&nbsp;</span></div>
+                    <div class="w3-right w3-text-grey">
+                        <span class="w3-tag w3-round w3-border w3-border-white">{{ group.first_time }} - {{ group.last_time }}</span>
+                        &nbsp;
+                        <span class="w3-tag w3-round w3-green w3-border w3-border-white">{{ group.minutes_span_label }}&nbsp;</span>
+                    </div>
             </div>
             <div id="group-{{ key }}" class="collapse w3-margin-top">
                 <table class="w3-table w3-striped w3-bordered">

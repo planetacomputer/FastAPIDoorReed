@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Puerta - Month List</title>
+    <link rel="icon" href="data:;base64,iVBORw0KGgo=">
+    <link rel="stylesheet" href="/static/w3.css">
+    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            document.querySelectorAll('.day-header').forEach(function (h) {
+                h.addEventListener('click', function () {
+                    const id = this.getAttribute('data-target');
+                    const cont = document.getElementById(id);
+                    if (!cont) return;
+                    if (cont.classList.contains('collapse')) {
+                        cont.classList.remove('collapse');
+                    } else {
+                        cont.classList.add('collapse');
+                    }
+                });
+            });
+        });
+    </script>
+</head>
+<body class="w3-light-grey">
+    {%- set qs = request.url.query -%}
+    <!-- top navigation with centered title -->
+    <div class="w3-bar w3-brown w3-padding-small" style="display:flex;align-items:center;">
+        <a href="/puerta_calendar{% if qs %}?{{ qs }}{% endif %}" class="w3-bar-item w3-button w3-round w3-border w3-margin-right">Calendario</a>
+        <div style="flex:1; text-align:center;"><h3 class="w3-text-white" style="margin:0; font-size:1.25rem;">Limpieza - Lista mensual</h3></div>
+        <a href="/puerta_list" class="w3-bar-item w3-button w3-white w3-round">Lista</a>
+    </div>
+    <div class="w3-container w3-margin-bottom">
+        <div id="calendar-title">
+            <a href="/puerta_list?year={{ prev_year }}&month={{ prev_month }}" class="nav-btn w3-button w3-white w3-round">&laquo; Ant.</a>
+            <div class="title"><h4 style="margin:0">{{ month_name }} {{ year }}</h4></div>
+            <a href="/puerta_list?year={{ next_year }}&month={{ next_month }}" class="nav-btn w3-button w3-white w3-round">Sigu. &raquo;</a>
+        </div>
+    </div>
+
+    <div class="w3-container">
+        {% for key, group in groups.items() %}
+        <div class="day-container w3-card-2 w3-padding-small">
+            <div class="day-header w3-bar w3-light-grey" data-target="group-{{ key }}">
+                <div class="w3-left"><b>{{ group.label }}</b></div>
+                <div class="w3-right w3-text-grey">
+                    <span class="w3-tag w3-round w3-border w3-border-white">{{ group.first_time }} - {{ group.last_time }}</span>
+                    &nbsp;
+                    <span class="w3-tag w3-round w3-green w3-border w3-border-white">{{ group.minutes_span_label }}&nbsp;</span>
+                </div>
+            </div>
+            <div id="group-{{ key }}" class="{% if expand_key and key == expand_key %}w3-margin-top{% else %}collapse w3-margin-top{% endif %}">
+                <table class="w3-table w3-striped w3-bordered">
+                    <thead class="w3-light-grey">
+                        <tr>
+                            <th>Estado</th>
+                            <th>Hora</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in group.rows %}
+                        <tr>
+                            <td><span class="w3-tag w3-round w3-{% if row.state == '0' %}green{% else %}red{% endif %}">{{ "ABIERTA" if row.state == "0" else "CERRADA" }}</span></td>
+                             <td>
+                                {% if loop.first or loop.last %}
+                                    <i class="{% if row.timestamp.strftime('%Y-%m-%d') == today_key %}w3-spin{% endif %} fa fa-clock-o"></i>
+                                {% endif %}
+                                {{ row.timestamp.strftime("%H:%M:%S") }}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endfor %}
+        <!-- if groups is empty show a message "No hay eventos para este mes" -->
+        {% if not groups %}
+        <div class="w3-container w3-center w3-padding-16">
+            <h4 class="w3-text-grey">No hay registros en este mes</h4>
+        </div>
+        {% endif %}
+    </div>
+</body>
+</html>
