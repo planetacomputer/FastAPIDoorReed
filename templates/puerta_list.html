@@ -1,35 +1,22 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Puerta - Month List</title>
-    <link rel="icon" href="data:;base64,iVBORw0KGgo=">
-    <link rel="stylesheet" href="/static/w3.css">
-    <link rel="stylesheet" href="/static/styles.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
-    <script>
-        document.addEventListener('DOMContentLoaded', function () {
-            document.querySelectorAll('.day-header').forEach(function (h) {
-                h.addEventListener('click', function () {
-                    const id = this.getAttribute('data-target');
-                    const cont = document.getElementById(id);
-                    if (!cont) return;
-                    if (cont.classList.contains('collapse')) {
-                        cont.classList.remove('collapse');
-                    } else {
-                        cont.classList.add('collapse');
-                    }
-                });
-            });
-        });
-    </script>
-</head>
-<body class="w3-light-grey">
+{% extends 'base.html' %}
+
+{% block title %}Puerta - Listado mensual{% endblock %}
+
+{% block content %}
     {%- set qs = request.url.query -%}
     <!-- top navigation with centered title -->
     <div class="w3-bar w3-brown w3-padding-small" style="display:flex;align-items:center;">
         <a href="/puerta_calendar{% if qs %}?{{ qs }}{% endif %}" class="w3-bar-item w3-button w3-round w3-border w3-margin-right">Calendario</a>
-        <div style="flex:1; text-align:center;"><h3 class="w3-text-white" style="margin:0; font-size:1.25rem;">Limpieza - Lista mensual</h3></div>
+        <div style="flex:1; text-align:center;">
+            <h3 class="w3-text-white" style="margin:0; font-size:1.25rem;">
+                Puerta limpieza - Listado mensual
+                {%- if last_state is not none -%}
+                    <span id="last-state-badge" class="w3-tag w3-round w3-{{ 'green' if last_state == '0' else 'red' }}" style="margin-left:8px;">{{ last_state_label }}</span>
+                {%- else -%}
+                    <span id="last-state-badge" class="w3-tag w3-round w3-taupe" style="margin-left:8px;">{{ last_state_label }}</span>
+                {%- endif -%}
+            </h3>
+        </div>
         <a href="/puerta_list" class="w3-bar-item w3-button w3-white w3-round">Lista</a>
     </div>
     <div class="w3-container w3-margin-bottom">
@@ -61,15 +48,17 @@
                     </thead>
                     <tbody>
                         {% for row in group.rows %}
-                        <tr>
+                            {% if not previousNumber %}
+                                {% set previousNumber = 0 %}
+                            {% endif %}
+                        <tr class="{% if row.out_of_window %}out-of-window{% endif %}">
                             <td><span class="w3-tag w3-round w3-{% if row.state == '0' %}green{% else %}red{% endif %}">{{ "ABIERTA" if row.state == "0" else "CERRADA" }}</span></td>
                              <td>
-                                {% if loop.first or loop.last %}
-                                    <i class="{% if row.timestamp.strftime('%Y-%m-%d') == today_key %}w3-spin{% endif %} fa fa-clock-o"></i>
-                                {% endif %}
-                                {{ row.timestamp.strftime("%H:%M:%S") }}
+                                <i class="{% if row.timestamp.strftime('%Y-%m-%d') == today_key %}w3-spin{% endif %} fa fa-clock-o"></i>
+                                {{ row.timestamp.strftime("%H:%M:%S") }} - {{row.contador}}
                             </td>
                         </tr>
+                            {% set previousNumber = row.contador %}
                         {% endfor %}
                     </tbody>
                 </table>
@@ -83,5 +72,75 @@
         </div>
         {% endif %}
     </div>
-</body>
-</html>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        document.querySelectorAll('.day-header').forEach(function (h) {
+            h.addEventListener('click', function () {
+                const id = this.getAttribute('data-target');
+                const cont = document.getElementById(id);
+                if (!cont) return;
+                if (cont.classList.contains('collapse')) {
+                    cont.classList.remove('collapse');
+                } else {
+                    cont.classList.add('collapse');
+                }
+            });
+        });
+        // websocket to update badge and today's group live
+        const wsScheme = (location.protocol === 'https:') ? 'wss:' : 'ws:';
+        const ws = new WebSocket(wsScheme + '//' + location.host + '/ws/events');
+        ws.addEventListener('message', function (ev) {
+            try {
+                const data = JSON.parse(ev.data);
+                // update header badge
+                const badge = document.getElementById('last-state-badge');
+                if (badge && typeof data.state !== 'undefined') {
+                    if (data.state == '0') {
+                        badge.classList.remove('w3-red');
+                        badge.classList.add('w3-green');
+                        badge.textContent = 'ABIERTA';
+                    } else {
+                        badge.classList.remove('w3-green');
+                        badge.classList.add('w3-red');
+                        badge.textContent = 'CERRADA';
+                    }
+                }
+
+                // if this event is for today's date, insert into that group's table if present
+                const todayKey = '{{ today_key }}';
+                if (data.date_key && data.date_key === todayKey) {
+                    const gid = 'group-' + todayKey;
+                    const groupDiv = document.getElementById(gid);
+                    if (groupDiv) {
+                        const tbody = groupDiv.querySelector('table tbody');
+                        if (tbody) {
+                            // build row
+                            const tr = document.createElement('tr');
+                            const stateClass = (data.state == '0') ? 'w3-green' : 'w3-red';
+                            let timeStr = '--:--:--';
+                            if (data.timestamp && data.timestamp.length >= 8) timeStr = data.timestamp.slice(-8);
+                            else if (data.timestamp_str && data.timestamp_str.length >= 8) timeStr = data.timestamp_str.slice(-8);
+                            tr.innerHTML = `\
+                                <td><span class="w3-tag w3-round ${stateClass}">${data.state == '0' ? 'ABIERTA' : 'CERRADA'}</span></td>\
+                                <td>${timeStr}</td>`;
+                            // insert at top
+                            tbody.insertBefore(tr, tbody.firstChild);
+                            // mark out-of-window if server flagged it
+                            if (data.out_of_window) tr.classList.add('out-of-window');
+                            tr.classList.add('flash-row');
+                            setTimeout(() => tr.classList.remove('flash-row'), 2000);
+                            // limit rows to 50
+                            while (tbody.children.length > 50) tbody.removeChild(tbody.lastChild);
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error('puerta_list ws parse error', e);
+            }
+        });
+    });
+</script>
+{% endblock %}

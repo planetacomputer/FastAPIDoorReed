@@ -9,6 +9,7 @@ This project is designed for **IoT / embedded systems scenarios**, where a senso
 ## ✨ Features
 
 - 📡 REST API built with FastAPI  
+- Database MySQL
 - 🚪 Track door state (OPEN / CLOSED)  
 - 🕒 Timestamped events  
 - 🌐 Simple web interface (HTML + Jinja2)  
@@ -32,17 +33,27 @@ This project is designed for **IoT / embedded systems scenarios**, where a senso
 ```
 FastAPIDoorReed/
 │
-├── app/
-│   ├── main.py          # FastAPI entry point
-│   ├── routes/          # API endpoints
-│   ├── templates/       # Jinja2 templates
-│   ├── static/          # CSS / JS / assets
-│   └── models/          # Data models
-│
+├── main.py                # FastAPI entry point and routes
+├── db.py                  # MySQL helpers and pool
+├── dbconfig.py            # DB connection configuration
+├── ws.py                  # WebSocket helpers (if used)
+├── utils.py               # UI/formatting and helper functions
 ├── requirements.txt
 ├── README.md
-├── dbconfig.py
-├── venv/
+├── templates/             # Jinja2 templates
+│   ├── base.html
+│   ├── events.html
+│   ├── puerta.html
+│   ├── puerta_list.html
+│   └── puerta_calendar.html
+├── static/                # CSS / fonts / assets
+│   ├── styles.css
+│   ├── w3.css
+│   ├── font-awesome.min.css
+│   └── fonts/
+├── tests/                 # pytest tests
+│   ├── test_db.py
+│   └── test_utils.py
 └── ...
 ```
 
@@ -76,7 +87,13 @@ pip install -r requirements.txt
 ## ▶️ Run the application
 
 ```bash
-uvicorn app.main:app --reload
+uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
+or
+
+```bash
+uvicorn main:app --reload
 ```
 
 Open your browser:
@@ -168,7 +185,6 @@ Contributions are welcome!
 
 ---
 
-
 # FastAPIDoorReed
 
 Run the FastAPI server with uvicorn:
@@ -194,6 +210,24 @@ curl -X POST http://localhost:8000/door -H 'Content-Type: application/json' -d '
 
 
 
+## 🧪 Running tests (pytest)
+
+This project includes a small pytest file at `tests/test_db.py` for basic DB checks (it calls `ensure_schema()` and `fetch_rows_from_db()`). These are integration-style tests and will connect to the MySQL configured in `dbconfig.py`.
+
+
+```bash
+pytest -q
+```
+
+Notes and tips:
+- The tests may create the `door_events` table if it doesn't exist (idempotent). If you don't want to touch a production DB, point `dbconfig.py` to a test database before running tests.
+- If you prefer unit tests that don't touch the DB, I can convert these to use mocks.
+- To run a single test file:
+
+```bash
+pytest -q tests/test_db.py
+```
+
 ## 📄 License
 
 MIT License  
@@ -203,3 +237,5 @@ MIT License
 ## 👨‍💻 Author
 
 Developed by [planetacomputer](https://github.com/planetacomputer)
+
+---

@@ -7,6 +7,9 @@
 /* play animation once over 2 seconds */
 tr.flash-row td { animation: flash-bg 2s ease-in-out 1; }
 
+/* Also apply the same flash animation to inserted event items in the calendar */
+.event-item.flash-row { animation: flash-bg 2s ease-in-out 1; }
+
 /*puerta_calendar.html*/
 .calendar { width: 100%; }
 .calendar { width: 100%; border-collapse: collapse; }
@@ -37,3 +40,8 @@ tr.flash-row td { animation: flash-bg 2s ease-in-out 1; }
 #calendar-title .nav-btn { padding: 8px 12px; border-radius: 6px; text-decoration: none; }
 #calendar-title .title { font-weight: 600; font-size: 1.1em; }
 @media (max-width:600px) { #calendar-title { flex-direction: column; gap:6px; } }
+.out-of-window { color: #834d4d; }
+/* Make calendar event-items that are out-of-window appear subdued */
+.event-item.out-of-window { color: #999; opacity: 0.85; }
+.event-item.out-of-window .w3-tag { opacity: 0.55; }
+.event-item.out-of-window small { color: #999; opacity: 0.85; }
