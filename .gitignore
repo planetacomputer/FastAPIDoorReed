@@ -49,3 +49,4 @@ pip-wheel-metadata/
 
 # static build artifacts
 static/build/
+.github/workflows/python-app.yml`
