@@ -15,4 +15,5 @@ typing-inspection==0.4.2
 typing_extensions==4.15.0
 uvicorn==0.42.0
 websockets==16.0
-pytest>=7.0.0
+python-dotenv==1.0.0
+python-telegram-bot==20.3

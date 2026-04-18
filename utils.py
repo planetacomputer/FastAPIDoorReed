@@ -1,4 +1,6 @@
 from datetime import datetime
+from typing import List
+from models import EventOut
 
 # Thresholds for RSSI and SNR (share with compute_row_display_fields)
 RSSI_GOOD = -80   # RSSI stronger (less negative) than -80 is good
@@ -15,40 +17,69 @@ def format_timestamp(dt):
 
 
 def compute_row_display_fields(row):
-    """Mutate a row (dict) adding timestamp_str, rssi_status/rssi_class, snr_status/snr_class."""
+    """Accept a dict or EventOut and return an EventOut with display fields set.
+
+    This function will convert a plain DB row dict into `EventOut` if needed,
+    then compute `timestamp_str`, RSSI/SNR status and classes, mutating and
+    returning the EventOut instance.
+    """
+    # convert dict to EventOut if necessary
+    if isinstance(row, dict):
+        try:
+            model = EventOut(**row)
+        except Exception:
+            # fallback: create a minimal EventOut-like object
+            model = EventOut(id=row.get('id', 0), device_id=row.get('device_id'), state=str(row.get('state', '')),
+                             contador=row.get('contador'), rssi=row.get('rssi'), snr=row.get('snr'), battery=row.get('battery'),
+                             timestamp=row.get('timestamp') or datetime.now())
+    elif isinstance(row, EventOut):
+        model = row
+    else:
+        # unsupported type; attempt to coerce
+        model = EventOut(id=getattr(row, 'id', 0), device_id=getattr(row, 'device_id', None),
+                         state=str(getattr(row, 'state', '')),
+                         contador=getattr(row, 'contador', None), rssi=getattr(row, 'rssi', None),
+                         snr=getattr(row, 'snr', None), battery=getattr(row, 'battery', None),
+                         timestamp=getattr(row, 'timestamp', datetime.now()))
+
     # timestamp
-    ts = row.get("timestamp")
-    row["timestamp_str"] = format_timestamp(ts)
+    ts = getattr(model, 'timestamp', None)
+    try:
+        model.timestamp_str = format_timestamp(ts)
+    except Exception:
+        model.timestamp_str = str(ts)
 
     # RSSI
     try:
-        rssi_val = float(row.get("rssi") if row.get("rssi") is not None else 0)
+        rssi_val = float(model.rssi) if model.rssi is not None else 0.0
     except Exception:
         rssi_val = 0.0
     if rssi_val >= RSSI_GOOD:
-        row["rssi_status"] = "Good"
-        row["rssi_class"] = "w3-green"
+        model.rssi_status = "Good"
+        model.rssi_class = "w3-green"
     elif rssi_val <= RSSI_POOR:
-        row["rssi_status"] = "Poor"
-        row["rssi_class"] = "w3-red"
+        model.rssi_status = "Poor"
+        model.rssi_class = "w3-red"
     else:
-        row["rssi_status"] = "Fair"
-        row["rssi_class"] = "w3-yellow"
+        model.rssi_status = "Fair"
+        model.rssi_class = "w3-yellow"
 
     # SNR
     try:
-        snr_val = float(row.get("snr") if row.get("snr") is not None else 0)
+        snr_val = float(model.snr) if model.snr is not None else 0.0
     except Exception:
         snr_val = 0.0
     if snr_val >= SNR_GOOD:
-        row["snr_status"] = "Good"
-        row["snr_class"] = "w3-teal"
+        model.snr_status = "Good"
+        model.snr_class = "w3-teal"
     elif snr_val <= SNR_POOR:
-        row["snr_status"] = "Poor"
-        row["snr_class"] = "w3-pink"
+        model.snr_status = "Poor"
+        model.snr_class = "w3-pink"
     else:
-        row["snr_status"] = "Fair"
-        row["snr_class"] = "w3-khaki"
+        model.snr_status = "Fair"
+        model.snr_class = "w3-khaki"
+
+    return model
 
 
 def local_tz_offset_str():
@@ -71,39 +102,45 @@ def compute_group_time_span(rows_for_day, window_hours=3):
     time window (default 3 hours from the day's first event) and compute a
     minutes-span and human label plus first/last time strings.
 
-    Returns a tuple: (minutes_span:int, minutes_span_label:str, first_time:str, last_time:str)
-    Mutates rows_for_day by setting each row['out_of_window'] = True/False.
+    Accepts a list of EventOut or dicts and returns (minutes_span, label, first_time, last_time).
+    Mutates EventOut instances by setting `out_of_window` boolean.
     """
-    from datetime import datetime, timedelta
+    from datetime import timedelta
 
-    # initialize
-    for r in rows_for_day:
-        r["out_of_window"] = False
+    # normalize to EventOut models
+    models: List[EventOut] = []
+    for item in rows_for_day:
+        if isinstance(item, EventOut):
+            models.append(item)
+        else:
+            try:
+                models.append(compute_row_display_fields(item))
+            except Exception:
+                continue
 
-    if not rows_for_day:
+    for m in models:
+        m.out_of_window = False
+
+    if not models:
         return 0, "0 min", "--:--", "--:--"
 
-    # rows are expected newest -> oldest; first event (chronologically oldest)
-    first_ts = rows_for_day[-1].get("timestamp")
+    first_ts = models[-1].timestamp
     if not isinstance(first_ts, datetime):
         return 0, "0 min", "--:--", "--:--"
 
-    # mark out_of_window
     window_td = timedelta(hours=window_hours)
-    for r in rows_for_day:
-        ts = r.get("timestamp")
+    for m in models:
         try:
-            r["out_of_window"] = (ts - first_ts) > window_td
+            m.out_of_window = (m.timestamp - first_ts) > window_td
         except Exception:
-            r["out_of_window"] = False
+            m.out_of_window = False
 
-    # consider only in-window events
-    in_window = [r for r in rows_for_day if not r.get("out_of_window")]
+    in_window = [m for m in models if not m.out_of_window]
     if not in_window:
         return 0, "0 min", "--:--", "--:--"
 
-    newest_in = in_window[0].get("timestamp")
-    oldest_in = in_window[-1].get("timestamp")
+    newest_in = in_window[0].timestamp
+    oldest_in = in_window[-1].timestamp
     if isinstance(newest_in, datetime) and isinstance(oldest_in, datetime):
         delta_minutes = int((newest_in - oldest_in).total_seconds() / 60)
         first_time = oldest_in.strftime("%H:%M")

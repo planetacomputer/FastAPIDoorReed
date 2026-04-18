@@ -1,10 +1,54 @@
-{% extends 'base.html' %}
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Door Events</title>
+    <!-- W3.CSS CDN -->
+    <link rel="stylesheet" href="https://www.w3schools.com/w3css/5/w3.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+    <link rel="stylesheet" href="/static/styles.css">
+    <script>
+        // Open websocket and insert incoming rows at top of table
+        document.addEventListener('DOMContentLoaded', function () {
+            const wsScheme = (location.protocol === 'https:') ? 'wss:' : 'ws:';
+            const ws = new WebSocket(wsScheme + '//' + location.host + '/ws/events');
+            ws.addEventListener('message', function (ev) {
+                try {
+                    const data = JSON.parse(ev.data);
+                    const tbody = document.querySelector('table.w3-table tbody');
+                    if (!tbody) return;
+                    // Build row HTML matching server template
+                    const tr = document.createElement('tr');
+                    if (data.flash) tr.classList.add('flash-row');
+                    tr.innerHTML = `
+                        <td>${data.id}</td>
+                        <td>${data.device_id}</td>
+                        <td><span class="w3-tag w3-round ${data.state == '0' ? 'w3-green' : 'w3-red'}"><b>${data.state == '0' ? 'ABIERTA' : 'CERRADA'}</b></span></td>
+                        <td>${data.contador}</td>
+                        <td title="${data.rssi_status}"><span class="w3-tag w3-round ${data.rssi_class} w3-padding-small" title="${data.rssi_status}">${data.rssi}</span></td>
+                        <td title="${data.snr_status}"><span class="w3-tag w3-round ${data.snr_class} w3-padding-small" title="${data.snr_status}">${data.snr}</span></td>
+                        <td>${data.battery}</td>
+                        <td>${data.timestamp_str}</td>
+                    `;
+                    tbody.insertBefore(tr, tbody.firstChild);
+                    // always flash/highlight newly inserted row for 2s
+                    tr.classList.add('flash-row');
+                    setTimeout(() => tr.classList.remove('flash-row'), 2000);
+                    // limit rows to 50
+                    while (tbody.children.length > 50) tbody.removeChild(tbody.lastChild);
+                } catch (e) {
+                    console.error('ws message parse error', e);
+                }
+            });
+            ws.addEventListener('open', () => console.info('ws connected'));
+            ws.addEventListener('close', () => console.info('ws closed'));
+        });
+    </script>
+</head>
+<body class="w3-light-grey">
 
-{% block title %}Door Events{% endblock %}
-
-{% block content %}
-    <div class="w3-container w3-center w3-padding-8">
-        <h2 class="w3-text-brown">Puerta limpieza</h2>
+    <div class="w3-container w3-padding-8">
+        <h2 class="w3-text-brown w3-center">Puerta limpieza<span class="w3-large w3-monospace w3-right">&nbsp;{{ latest_battery_row.battery if latest_battery_row else 'N/A' }}%</span><span class="w3-right fa fa-battery-full"></span></h2>
     </div>
 
     <div class="w3-container">
@@ -25,17 +69,13 @@ class="w3-text w3-tag">9 million inhabitants</span> <i class="w3-badge fa fa-inf
             </thead>
             <tbody>
                 {% for row in rows %}
-                <!-- Only set to zero if previousNumber is not set -->
-                {% if not previousNumber %}
-                    {% set previousNumber = 0 %}
-                {% endif %}
                 <tr>
                     <td>{{ row.id }}</td>
                     <td>{{ row.device_id }}</td>
                     <!-- if row.state is 0 write OPENED, ELSE write CLOSED -->
                      <!-- w3 color red -->
                     <td><span class="w3-tag w3-round w3-{% if row.state == "0" %}green{% else %}red{% endif %}"><b>{{ "ABIERTA" if row.state == "0" else "CERRADA" }}</b></span></td>
-                    <td>{{ row.contador }} {% if row.contador == previousNumber+1 %} * {% endif %}</td>
+                    <td>{{ row.contador }}</td>
                     <td title="{{ row.rssi_status }}">
                         <span class="w3-tag w3-round {{ row.rssi_class }} w3-padding-small" title="{{ row.rssi_status }}" aria-label="RSSI status: {{ row.rssi_status }}">{{ row.rssi }}</span>
                     </td>
@@ -45,50 +85,10 @@ class="w3-text w3-tag">9 million inhabitants</span> <i class="w3-badge fa fa-inf
                     <td>{{ row.battery }}</td>
                     <td>{{ row.timestamp_str }}</td>
                 </tr>
-                {% set previousNumber = row.contador %}
                 {% endfor %}
             </tbody>
         </table>
         </div>
     </div>
-{% endblock %}
-
-{% block scripts %}
-<script>
-    // Open websocket and insert incoming rows at top of table
-    document.addEventListener('DOMContentLoaded', function () {
-        const wsScheme = (location.protocol === 'https:') ? 'wss:' : 'ws:';
-        const ws = new WebSocket(wsScheme + '//' + location.host + '/ws/events');
-        ws.addEventListener('message', function (ev) {
-            try {
-                const data = JSON.parse(ev.data);
-                const tbody = document.querySelector('table.w3-table tbody');
-                if (!tbody) return;
-                // Build row HTML matching server template
-                const tr = document.createElement('tr');
-                if (data.flash) tr.classList.add('flash-row');
-                tr.innerHTML = `
-                    <td>${data.id}</td>
-                    <td>${data.device_id}</td>
-                    <td><span class="w3-tag w3-round ${data.state == '0' ? 'w3-green' : 'w3-red'}"><b>${data.state == '0' ? 'ABIERTA' : 'CERRADA'}</b></span></td>
-                    <td>${data.contador}</td>
-                    <td title="${data.rssi_status}"><span class="w3-tag w3-round ${data.rssi_class} w3-padding-small" title="${data.rssi_status}">${data.rssi}</span></td>
-                    <td title="${data.snr_status}"><span class="w3-tag w3-round ${data.snr_class} w3-padding-small" title="${data.snr_status}">${data.snr}</span></td>
-                    <td>${data.battery}</td>
-                    <td>${data.timestamp_str}</td>
-                `;
-                tbody.insertBefore(tr, tbody.firstChild);
-                // always flash/highlight newly inserted row for 2s
-                tr.classList.add('flash-row');
-                setTimeout(() => tr.classList.remove('flash-row'), 2000);
-                // limit rows to 50
-                while (tbody.children.length > 50) tbody.removeChild(tbody.lastChild);
-            } catch (e) {
-                console.error('ws message parse error', e);
-            }
-        });
-        ws.addEventListener('open', () => console.info('ws connected'));
-        ws.addEventListener('close', () => console.info('ws closed'));
-    });
-</script>
-{% endblock %}
+</body>
+</html>

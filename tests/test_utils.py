@@ -1,7 +1,7 @@
 import pytest
 from datetime import datetime
 
-from utils import compute_group_time_span, compute_weeks_totals
+from utils import compute_row_display_fields, compute_group_time_span, compute_weeks_totals
 
 
 def test_compute_group_time_span_empty():
@@ -18,17 +18,19 @@ def test_compute_group_time_span_basic():
     newest = datetime(2026, 4, 1, 9, 30, 0)
     oldest = datetime(2026, 4, 1, 8, 0, 0)
     rows = [{"timestamp": newest}, {"timestamp": oldest}]
+    # convert to EventOut models using helper
+    models = [compute_row_display_fields(r) for r in rows]
 
-    minutes, label, first_time, last_time = compute_group_time_span(rows)
+    minutes, label, first_time, last_time = compute_group_time_span(models)
 
     assert minutes == 90
     assert "1h" in label
     assert "30m" in label
     assert first_time == "08:00"
     assert last_time == "09:30"
-    # ensure out_of_window flags are present and correct
-    assert rows[0]["out_of_window"] is False
-    assert rows[1]["out_of_window"] is False
+    # ensure out_of_window flags are present and correct on models
+    assert models[0].out_of_window is False
+    assert models[1].out_of_window is False
 
 
 def test_compute_group_time_span_out_of_window():
@@ -37,13 +39,14 @@ def test_compute_group_time_span_out_of_window():
     mid = datetime(2026, 4, 2, 2, 0, 0)
     oldest = datetime(2026, 4, 2, 0, 0, 0)
     rows = [{"timestamp": newest}, {"timestamp": mid}, {"timestamp": oldest}]
+    models = [compute_row_display_fields(r) for r in rows]
 
-    minutes, label, first_time, last_time = compute_group_time_span(rows)
+    minutes, label, first_time, last_time = compute_group_time_span(models)
 
     # newest should be out_of_window, mid and oldest in window -> span 120 min
-    assert rows[0]["out_of_window"] is True
-    assert rows[1]["out_of_window"] is False
-    assert rows[2]["out_of_window"] is False
+    assert models[0].out_of_window is True
+    assert models[1].out_of_window is False
+    assert models[2].out_of_window is False
     assert minutes == 120
     assert label == "2h"
     assert first_time == "00:00"

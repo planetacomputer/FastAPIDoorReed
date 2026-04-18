@@ -60,30 +60,40 @@ def ensure_schema():
 
 def insert_event_db(ev: dict):
     """Insert event into DB (sync). Returns a dict with inserted values and timestamp as datetime."""
+    # Accept Pydantic BaseModel or dict
+    try:
+        # Pydantic BaseModel has model_dump() in v2
+        ev_dict = ev.model_dump()  # type: ignore
+    except Exception:
+        # fallback for plain dict-like inputs
+        ev_dict = dict(ev) if ev is not None else {}
+
     conn = get_connection()
     cursor = conn.cursor()
     try:
         try:
-            state_parts = ev.get('state', '').split('|')
+            state_parts = ev_dict.get('state', '').split('|')
             state_val = state_parts[1]
             contador_val = int(state_parts[2])
+            battery_val = int(state_parts[3])
         except Exception:
-            state_val = ev.get('state', '')
-            contador_val = ev.get('contador', 1)
+            state_val = ev_dict.get('state', '')
+            contador_val = ev_dict.get('contador', 1)
+            battery_val = ev_dict.get('battery', None)
 
         cursor.execute(
             "INSERT INTO door_events (device_id, state, contador, rssi, snr, battery) VALUES (%s, %s, %s, %s, %s, %s)",
-            (ev.get("device_id"), state_val, contador_val, ev.get("rssi"), ev.get("snr"), ev.get("battery"))
+            (ev_dict.get("device_id"), state_val, contador_val, ev_dict.get("rssi"), ev_dict.get("snr"), battery_val)
         )
         conn.commit()
         inserted = {
             "id": cursor.lastrowid,
-            "device_id": ev.get("device_id"),
+            "device_id": ev_dict.get("device_id"),
             "state": state_val,
             "contador": contador_val,
-            "rssi": ev.get("rssi"),
-            "snr": ev.get("snr"),
-            "battery": ev.get("battery"),
+            "rssi": ev_dict.get("rssi"),
+            "snr": ev_dict.get("snr"),
+            "battery": battery_val,
             "timestamp": datetime.now()
         }
         return inserted
@@ -99,9 +109,15 @@ def fetch_rows_from_db(limit=50):
     rows = cursor.fetchall()
     cursor.close()
     conn.close()
+    # convert DB row dicts into EventOut models with display fields
+    rows_models = []
     for row in rows:
-        compute_row_display_fields(row)
-    return rows
+        try:
+            rows_models.append(compute_row_display_fields(row))
+        except Exception:
+            # fallback: keep raw dict if conversion fails
+            rows_models.append(row)
+    return rows_models
 
 
 def fetch_rows_for_month(year: int, month: int, limit: int = 5000):
@@ -133,9 +149,13 @@ def fetch_rows_for_month(year: int, month: int, limit: int = 5000):
         cursor.close()
         conn.close()
 
+    rows_models = []
     for row in rows:
-        compute_row_display_fields(row)
-    return rows
+        try:
+            rows_models.append(compute_row_display_fields(row))
+        except Exception:
+            rows_models.append(row)
+    return rows_models
 
 
 def verify_time_zone():

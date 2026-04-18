@@ -136,6 +136,9 @@ curl -X POST http://127.0.0.1:8000/event \
      -d '{"state": "0"}'
 ```
 
+```bash
+curl -F "url=https://7943747593.ngrok-free.app/webhook" https://api.telegram.org/botXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX/setWebhook
+```
 ---
 
 ## 🖥️ Hardware Integration (Optional)
@@ -166,9 +169,7 @@ requests.post("http://localhost:8000/event", json={"state": "0"})
 
 ## 🚀 Future Improvements
 
-- WebSocket real-time updates  
 - Authentication / security  
-- Database persistence (SQLite / PostgreSQL)  
 - Notifications (Telegram / email)  
 - Dashboard with charts  
 
@@ -228,7 +229,51 @@ Notes and tips:
 pytest -q tests/test_db.py
 ```
 
-## 📄 License
+```bash
+python3 -m py_compile dbconfig.py main.py && pytest -q
+```
+
+## � Continuous Integration (GitHub Actions)
+
+This repository now includes a GitHub Actions workflow at `.github/workflows/python-app.yml` that runs the test suite on pushes and pull requests targeting `main`.
+
+What it does:
+- Sets up Python (3.11 and 3.12 matrix)
+- Installs dependencies from `requirements.txt` (if present)
+- Runs `pytest -q`
+
+If your tests require a MySQL instance or environment variables, you'll need to update the workflow to provide a service container or mock the DB for CI. I can help add a service-based job (MySQL) if you want the integration tests to run in CI.
+
+To test CI locally, run the same commands used in the workflow:
+
+```bash
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+pytest -q
+```
+
+## 🟢 Local development with .env
+
+For local development you can provide secrets and environment overrides using a `.env` file (kept out of version control).
+
+1. Copy the example:
+
+```bash
+cp .env.example .env
+```
+
+2. Edit `.env` and set your `TELEGRAM_TOKEN` (and any DB overrides if needed).
+
+3. Start the app normally; the project uses `python-dotenv` to load `.env` automatically when the app starts:
+
+```bash
+uvicorn main:app --reload
+```
+
+Note: `.env` is ignored by `.gitignore` so it won't be committed.
+
+
+## �📄 License
 
 MIT License  
 

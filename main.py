@@ -4,18 +4,42 @@ from datetime import datetime, timedelta
 import calendar
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from telegram import Update
+from telegram.ext import Application, CommandHandler, ContextTypes
+import os
+from fastapi import HTTPException
+from contextlib import asynccontextmanager
+from dotenv import load_dotenv
 import asyncio
 from utils import compute_row_display_fields, compute_group_time_span, compute_groups_metadata
 from db import get_connection, insert_event_db, fetch_rows_from_db, fetch_rows_for_month, pool, _SESSION_TIME_ZONE, verify_time_zone, ensure_schema
+from models import EventIn, EventOut, PostDoorResponse
 import locale
 
 # Set Spanish locale
 locale.setlocale(locale.LC_TIME, "es_ES.utf8")  # Linux / macOS
 # For Windows, use "Spanish_Spain.1252"
 
-app = FastAPI()
+# Load environment variables from a local .env file for development (if present)
+load_dotenv()
 
- 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Initialize and start telegram bot when the application starts,
+    # and ensure it is stopped cleanly on shutdown.
+    # Note: `bot_app` is defined later in this module; that's okay because
+    # the lifespan function is executed after module import when the server starts.
+    if bot_app is not None:
+        await bot_app.initialize()
+        await bot_app.start()
+    try:
+        yield
+    finally:
+        if bot_app is not None:
+            await bot_app.stop()
+            await bot_app.shutdown()
+
+app = FastAPI(lifespan=lifespan)
 
 # Active websocket connections
 ws_connections: set = set()
@@ -31,29 +55,28 @@ async def broadcast_payload(payload: dict):
     for d in dead:
         ws_connections.discard(d)
 
-
 # fetch_rows_from_db is provided by db.py; imported above
-
-
-@app.post("/door")
-async def receive_event(event: dict):
+@app.post("/door", response_model=PostDoorResponse)
+async def receive_event(event: EventIn):
     # Insert into DB on a thread to avoid blocking
-    inserted = await asyncio.to_thread(insert_event_db, event)
+    # Convert to plain dict when passing to DB helper so it accepts both dict and BaseModel
+    # use Pydantic v2 model_dump() instead of deprecated dict()
+    inserted = await asyncio.to_thread(insert_event_db, event.model_dump())
 
-    # compute display fields
-    compute_row_display_fields(inserted)
-    # prepare JSON-serializable payload
-    payload = dict(inserted)
+    # compute display fields and get a model
+    model = compute_row_display_fields(inserted)
+    # prepare JSON-serializable payload from the model
+    # prefer model_dump() (Pydantic v2) to produce a JSON-serializable dict
+    payload = model.model_dump()
     # include a compact date key so clients can quickly decide which calendar cell
     # should receive this update (format: YYYY-MM-DD)
     try:
-        payload["date_key"] = inserted["timestamp"].strftime("%Y-%m-%d")
+        payload["date_key"] = model.timestamp.strftime("%Y-%m-%d")
     except Exception:
-        # fallback: try to extract from timestamp_str if possible (not ideal)
         payload["date_key"] = None
     # determine if this event is beyond 3 hours from the first event of that day
     try:
-        date_str = inserted["timestamp"].strftime("%Y-%m-%d")
+        date_str = model.timestamp.strftime("%Y-%m-%d")
         conn2 = get_connection()
         cur2 = conn2.cursor()
         cur2.execute("SELECT MIN(timestamp) FROM door_events WHERE DATE(timestamp) = %s", (date_str,))
@@ -62,19 +85,23 @@ async def receive_event(event: dict):
         conn2.close()
         first_ts = row[0] if row and row[0] is not None else None
         if isinstance(first_ts, datetime):
-            out_of_window = (inserted["timestamp"] - first_ts) > timedelta(hours=3)
+            out_of_window = (model.timestamp - first_ts) > timedelta(hours=3)
         else:
             out_of_window = False
     except Exception:
         out_of_window = False
     payload["out_of_window"] = out_of_window
-    payload["timestamp"] = payload["timestamp_str"]
+    payload["timestamp"] = payload.get("timestamp_str")
     payload["flash"] = True
 
     # broadcast
     asyncio.create_task(broadcast_payload(payload))
 
-    return {"status": "saved"}
+    # prepare response event (use inserted dict — Pydantic will validate)
+    # model is already an EventOut with display fields
+    event_out = model if isinstance(model, EventOut) else None
+
+    return PostDoorResponse(status="saved", event=event_out)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 # Serve the top-level `fonts/` directory at `/fonts` so Font Awesome's
@@ -103,7 +130,17 @@ def startup_check_time_zone():
 @app.get("/events", response_class=HTMLResponse)
 def show_events(request: Request):
     rows = fetch_rows_from_db(limit=250)
-    return templates.TemplateResponse(request=request, name="events.html", context={"rows": rows})
+    latest_battery_row = 0
+    # ensure rows are EventOut models for templates
+    try: 
+        rows_models = [r if isinstance(r, EventOut) else compute_row_display_fields(r) for r in rows]
+        # get most recent row with battery value
+    except Exception:
+        rows_models = rows
+        latest_battery_row = next((r for r in rows_models if r['battery'] is not None), None)
+        print("Latest battery row:", latest_battery_row)
+
+    return templates.TemplateResponse(request=request, name="events.html", context={"rows": rows_models, "latest_battery_row": latest_battery_row})
 
 
 @app.get("/", include_in_schema=False)
@@ -135,7 +172,10 @@ def show_puerta_calendar(request: Request):
     if latest:
         try:
             lr = latest[0]
-            last_state_raw = lr.get('state')
+            try:
+                last_state_raw = getattr(lr, 'state')
+            except Exception:
+                last_state_raw = lr.get('state') if isinstance(lr, dict) else None
             last_state_label = 'ABIERTA' if str(last_state_raw) == '0' else 'CERRADA'
         except Exception:
             last_state_raw = None
@@ -149,8 +189,8 @@ def show_puerta_calendar(request: Request):
     groups = OrderedDict()
     for row in rows:
         try:
-            ts_dt = row.get('timestamp')
-            if ts_dt.year != year or ts_dt.month != month:
+            ts_dt = getattr(row, 'timestamp', row.get('timestamp') if isinstance(row, dict) else None)
+            if ts_dt is None or ts_dt.year != year or ts_dt.month != month:
                 continue
             day_key = ts_dt.strftime("%Y-%m-%d")
             day_label = ts_dt.strftime("%A %d %b %Y")
@@ -205,6 +245,15 @@ def show_puerta_calendar(request: Request):
         from utils import compute_weeks_totals
         compute_weeks_totals(weeks, groups)
     except Exception:
+        pass
+
+    # ensure group rows are EventOut models for template rendering
+    try:
+        for key, g in groups.items():
+            g_rows = g.get("rows", [])
+            g["rows"] = [r if isinstance(r, EventOut) else compute_row_display_fields(r) for r in g_rows]
+    except Exception:
+        # leave groups as-is on failure
         pass
 
     # helper: previous and next month for navigation
@@ -273,8 +322,8 @@ def show_puerta_list(request: Request):
     groups = OrderedDict()
     for row in rows:
         try:
-            ts_dt = row.get('timestamp')
-            if ts_dt.year != year or ts_dt.month != month:
+            ts_dt = getattr(row, 'timestamp', row.get('timestamp') if isinstance(row, dict) else None)
+            if ts_dt is None or ts_dt.year != year or ts_dt.month != month:
                 continue
             day_key = ts_dt.strftime("%Y-%m-%d")
             day_label = ts_dt.strftime("%A %d %b %Y")
@@ -293,6 +342,15 @@ def show_puerta_list(request: Request):
             g["minutes_span_label"] = g.get("minutes_span_label", "0 min")
             g["first_time"] = g.get("first_time", "--:--")
             g["last_time"] = g.get("last_time", "--:--")
+
+    # ensure group rows are EventOut models for template rendering
+    try:
+        for key, g in groups.items():
+            g_rows = g.get("rows", [])
+            g["rows"] = [r if isinstance(r, EventOut) else compute_row_display_fields(r) for r in g_rows]
+    except Exception:
+        # leave groups as-is on failure
+        pass
 
     # navigation
     prev_month = month - 1
@@ -334,3 +392,39 @@ async def websocket_events(websocket: WebSocket):
         ws_connections.discard(websocket)
     except Exception:
         ws_connections.discard(websocket)
+
+TOKEN = os.getenv("TELEGRAM_TOKEN")
+
+# --- BOT HANDLERS ---
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Hola 👋 Bot en webhook funcionando")
+
+
+async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🆘 Ayuda del bot")
+
+async def last_visit_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    rows = fetch_rows_from_db(limit=1)
+    last_visit = rows[0].timestamp if rows else None
+    await update.message.reply_text(str(last_visit))
+
+
+# --- TELEGRAM APP ---
+if TOKEN:
+    bot_app = Application.builder().token(TOKEN).build()
+    bot_app.add_handler(CommandHandler("start", start))
+    bot_app.add_handler(CommandHandler("help", help_cmd))
+    bot_app.add_handler(CommandHandler("last_visit", last_visit_cmd))
+else:
+    bot_app = None
+
+
+# --- WEBHOOK ENDPOINT ---
+@app.post("/webhook")
+async def webhook(request: Request):
+    if not bot_app:
+        # Bot not configured; return service unavailable
+        raise HTTPException(status_code=503, detail="Telegram bot not configured")
+    update = Update.de_json(await request.json(), bot_app.bot)
+    await bot_app.process_update(update)
+    return {"ok": True}
