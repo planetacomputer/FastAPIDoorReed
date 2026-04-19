@@ -49,6 +49,21 @@ def compute_row_display_fields(row):
     else:
         row["snr_status"] = "Fair"
         row["snr_class"] = "w3-khaki"
+    
+    # Battery
+    try:
+        row["battery_val"] = float(row.get("battery") if row.get("battery") is not 0 else "")
+    except Exception:
+        row["battery_val"] = 0.0    
+    if row["battery_val"] >= 75:
+        row["battery_status"] = "Good"
+        row["battery_class"] = "w3-lime"
+    elif row["battery_val"] <= 25:
+        row["battery_status"] = "Poor"
+        row["battery_class"] = "w3-deep-orange"
+    else:
+        row["battery_status"] = "Fair"
+        row["battery_class"] = "w3-amber"
 
 
 def local_tz_offset_str():

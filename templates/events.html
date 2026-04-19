@@ -4,7 +4,8 @@
 
 {% block content %}
     <div class="w3-container w3-center w3-padding-8">
-        <h2 class="w3-text-brown">Puerta limpieza</h2>
+        <h2 class="w3-text-brown w3-center">Puerta limpieza<span class="w3-large w3-monospace w3-right">&nbsp;{{ last_battery }}%</span><span class="w3-right fa fa-battery-full"></span></h2>
+    </div>
     </div>
 
     <div class="w3-container">
@@ -42,7 +43,11 @@ class="w3-text w3-tag">9 million inhabitants</span> <i class="w3-badge fa fa-inf
                     <td title="{{ row.snr_status }}">
                         <span class="w3-tag w3-round {{ row.snr_class }} w3-padding-small" title="{{ row.snr_status }}" aria-label="SNR status: {{ row.snr_status }}">{{ row.snr }}</span>
                     </td>
-                    <td>{{ row.battery }}</td>
+                    <td title="{{ row.battery_status }}">
+                        {% if row.battery_val != 0%}
+                        <span class="w3-tag w3-round {{ row.battery_class }} w3-padding-small" title="{{ row.battery_status }}" aria-label="Battery status: {{ row.battery_status }}">{{ row.battery_val }}</span>
+                        {% endif %}
+                    </td>
                     <td>{{ row.timestamp_str }}</td>
                 </tr>
                 {% set previousNumber = row.contador %}
@@ -67,6 +72,9 @@ class="w3-text w3-tag">9 million inhabitants</span> <i class="w3-badge fa fa-inf
                 // Build row HTML matching server template
                 const tr = document.createElement('tr');
                 if (data.flash) tr.classList.add('flash-row');
+                bat_val = data.battery_val
+                if (bat_val === 0)
+                    bat_val = ""
                 tr.innerHTML = `
                     <td>${data.id}</td>
                     <td>${data.device_id}</td>
@@ -74,7 +82,7 @@ class="w3-text w3-tag">9 million inhabitants</span> <i class="w3-badge fa fa-inf
                     <td>${data.contador}</td>
                     <td title="${data.rssi_status}"><span class="w3-tag w3-round ${data.rssi_class} w3-padding-small" title="${data.rssi_status}">${data.rssi}</span></td>
                     <td title="${data.snr_status}"><span class="w3-tag w3-round ${data.snr_class} w3-padding-small" title="${data.snr_status}">${data.snr}</span></td>
-                    <td>${data.battery}</td>
+                    <td>${bat_val}</td>
                     <td>${data.timestamp_str}</td>
                 `;
                 tbody.insertBefore(tr, tbody.firstChild);

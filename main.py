@@ -5,20 +5,99 @@ import calendar
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import asyncio
+import os
+from dotenv import load_dotenv
 from utils import compute_row_display_fields, compute_group_time_span, compute_groups_metadata
-from db import get_connection, insert_event_db, fetch_rows_from_db, fetch_rows_for_month, pool, _SESSION_TIME_ZONE, verify_time_zone, ensure_schema
+from db import get_connection, insert_event_db, fetch_rows_from_db, fetch_rows_for_month, fetch_last_battery, pool, _SESSION_TIME_ZONE, verify_time_zone, ensure_schema
 import locale
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi.openapi.docs import get_swagger_ui_html
+import secrets
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+import hmac
+import hashlib
+import base64
+import json
+import time
+from pydantic import BaseModel
 
 # Set Spanish locale
 locale.setlocale(locale.LC_TIME, "es_ES.utf8")  # Linux / macOS
 # For Windows, use "Spanish_Spain.1252"
 
-app = FastAPI()
+app = FastAPI(
+    docs_url=None,      # disable /docs
+    redoc_url=None,     # optional
+    openapi_url="/openapi.json"  # keep schema
+)
 
- 
+# Load .env for local development (if present). This makes `uvicorn main:app` pick
+# up variables from the repository `.env` file without extra flags.
+load_dotenv()
 
 # Active websocket connections
 ws_connections: set = set()
+
+# JWT protection for /door endpoint (using PyJWT)
+# prefer an explicit JWT_SECRET_KEY; fall back to TELEGRAM_TOKEN for quick testing,
+# and finally to a sentinel value so code doesn't crash with None.
+JWT_SECRET = os.environ.get("JWT_SECRET_KEY") or os.environ.get("TELEGRAM_TOKEN") or "change-me"
+JWT_ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
+bearer_scheme = HTTPBearer()
+
+import jwt
+from jwt import InvalidTokenError, ExpiredSignatureError
+
+
+def verify_jwt_token(token: str) -> dict:
+    """Validate and decode a JWT using PyJWT.
+
+    Raises HTTPException with 401 for invalid or expired tokens, 500 for config errors.
+    Returns the decoded payload as a dict on success.
+    """
+    if JWT_ALGORITHM not in ("HS256",):
+        raise HTTPException(status_code=500, detail="Unsupported JWT algorithm")
+    if not JWT_SECRET:
+        raise HTTPException(status_code=500, detail="Server JWT secret not configured")
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        return payload
+    except ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+
+class TokenRequest(BaseModel):
+    admin_key: str
+    sub: str = "device"
+    exp: int | None = None
+
+
+@app.post("/token")
+def issue_token(req: TokenRequest):
+    """Issue a short-lived JWT for a device. Protected by ESP32_TOKEN_ADMIN_KEY env var.
+
+    This endpoint is convenient for testing; in production protect it tightly.
+    """
+    admin_key = os.environ.get("ESP32_TOKEN_ADMIN_KEY", "change-me-admin")
+    if req.admin_key != admin_key:
+        raise HTTPException(status_code=401, detail="bad admin key")
+    exp = req.exp or int(time.time()) + 3600
+    payload = {"sub": req.sub, "exp": exp}
+    token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    return {"token": token, "exp": exp}
+
+
+# Example usage (curl):
+#
+#  TOKEN=$(python3 scripts/mint_jwt.py --secret local-test-secret --sub tester)
+#  curl -v -X POST http://127.0.0.1:8000/door \
+#    -H "Content-Type: application/json" \
+#    -H "Authorization: Bearer $TOKEN" \
+#    -d '{"device_id":"limpieza","state":"|0|1","rssi":-78,"snr":6,"battery":3.7}'
+
 
 async def broadcast_payload(payload: dict):
     """Broadcast payload to all connected websockets, pruning dead connections."""
@@ -33,10 +112,10 @@ async def broadcast_payload(payload: dict):
 
 
 # fetch_rows_from_db is provided by db.py; imported above
-
-
 @app.post("/door")
-async def receive_event(event: dict):
+async def receive_event(event: dict, credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
+    # verify JWT from Authorization: Bearer <token>
+    verify_jwt_token(credentials.credentials)
     # Insert into DB on a thread to avoid blocking
     inserted = await asyncio.to_thread(insert_event_db, event)
 
@@ -103,7 +182,8 @@ def startup_check_time_zone():
 @app.get("/events", response_class=HTMLResponse)
 def show_events(request: Request):
     rows = fetch_rows_from_db(limit=250)
-    return templates.TemplateResponse(request=request, name="events.html", context={"rows": rows})
+    last_battery = fetch_last_battery()
+    return templates.TemplateResponse(request=request, name="events.html", context={"rows": rows, "last_battery": last_battery})
 
 
 @app.get("/", include_in_schema=False)
@@ -334,3 +414,33 @@ async def websocket_events(websocket: WebSocket):
         ws_connections.discard(websocket)
     except Exception:
         ws_connections.discard(websocket)
+
+
+# securing docs routes
+security = HTTPBasic()
+
+USERNAME = os.environ.get("USERNAME")
+PASSWORD = os.environ.get("PASSWORD")
+
+def verify(credentials: HTTPBasicCredentials = Depends(security)):
+    correct_username = secrets.compare_digest(credentials.username, USERNAME)
+    correct_password = secrets.compare_digest(credentials.password, PASSWORD)
+    if not (correct_username and correct_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    return credentials.username
+
+
+@app.get("/docs", include_in_schema=False)
+def custom_docs(username: str = Depends(verify)):
+    return get_swagger_ui_html(
+        openapi_url="/openapi.json",
+        title="Protected Docs"
+    )
+
+@app.get("/openapi.json", include_in_schema=False)
+def openapi(username: str = Depends(verify)):
+    return app.openapi()

@@ -116,6 +116,65 @@ Send door state updates:
 }
 ```
 
+## 🔐 Authentication for POST /door
+
+The `/door` endpoint is protected with an HS256-signed JWT. The application verifies
+the token using the secret provided in the `JWT_SECRET_KEY` environment variable
+(it will fall back to `TELEGRAM_TOKEN` only as a convenience). If you don't set a
+secret the app will still run, but tokens signed with a real secret won't validate.
+
+How tokens are validated
+- The app expects a Bearer token in the `Authorization` header: `Authorization: Bearer <token>`.
+- Only `HS256` is supported by the built-in verifier. The code checks the signature
+  and optional `exp` (expiry) claim.
+
+Generate a token (minimal, no external deps)
+
+Here's a small Python snippet that creates a compatible HS256 token (for testing):
+
+```python
+import base64, hmac, hashlib, json, time
+
+def b64u(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+header = {"alg": "HS256", "typ": "JWT"}
+payload = {"sub": "tester", "exp": int(time.time()) + 3600}
+secret = b"your-jwt-secret"
+
+hdr_b64 = b64u(json.dumps(header).encode())
+pl_b64 = b64u(json.dumps(payload).encode())
+sign = hmac.new(secret, f"{hdr_b64}.{pl_b64}".encode(), hashlib.sha256).digest()
+sig_b64 = b64u(sign)
+token = f"{hdr_b64}.{pl_b64}.{sig_b64}"
+print(token)
+```
+
+Using PyJWT (recommended for production)
+
+If you prefer a tested library, install `PyJWT` and run:
+
+```bash
+pip install PyJWT
+python -c "import jwt, time; print(jwt.encode({'sub':'tester','exp':int(time.time())+3600}, 'your-jwt-secret', algorithm='HS256'))"
+```
+
+Call the endpoint (curl example)
+
+```bash
+TOKEN="<paste-your-token-here>"
+curl -X POST http://127.0.0.1:8000/door \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"device_id":"limpieza","state":"|0|1","rssi":-78,"snr":6,"battery":3.7}'
+```
+
+Notes & security
+- Use a strong random secret for `JWT_SECRET_KEY` in production and set it via environment variables (not in source).
+- Consider rotating secrets and using short token lifetimes (set `exp` accordingly).
+- For full JWT support (multiple algorithms, key management, claims validation), use a library such as `PyJWT` or `python-jose`.
+
+
 ---
 
 ### GET /

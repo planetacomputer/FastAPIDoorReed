@@ -67,13 +67,15 @@ def insert_event_db(ev: dict):
             state_parts = ev.get('state', '').split('|')
             state_val = state_parts[1]
             contador_val = int(state_parts[2])
+            bateria_val = float(state_parts[3])
         except Exception:
             state_val = ev.get('state', '')
             contador_val = ev.get('contador', 1)
+            bateria_val = ev.get('bateria', 0.0)
 
         cursor.execute(
             "INSERT INTO door_events (device_id, state, contador, rssi, snr, battery) VALUES (%s, %s, %s, %s, %s, %s)",
-            (ev.get("device_id"), state_val, contador_val, ev.get("rssi"), ev.get("snr"), ev.get("battery"))
+            (ev.get("device_id"), state_val, contador_val, ev.get("rssi"), ev.get("snr"), bateria_val)
         )
         conn.commit()
         inserted = {
@@ -83,7 +85,7 @@ def insert_event_db(ev: dict):
             "contador": contador_val,
             "rssi": ev.get("rssi"),
             "snr": ev.get("snr"),
-            "battery": ev.get("battery"),
+            "battery": bateria_val,
             "timestamp": datetime.now()
         }
         return inserted
@@ -103,6 +105,17 @@ def fetch_rows_from_db(limit=50):
         compute_row_display_fields(row)
     return rows
 
+# SELECT battery FROM door_events ORDER BY timestamp WHERE battery IS NOT 0 DESC LIMIT 1
+
+def fetch_last_battery():
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT battery FROM door_events WHERE battery IS NOT NULL AND battery <> 0 " \
+    "ORDER BY timestamp DESC LIMIT 1;")
+    result = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    return result['battery'] if result else None
 
 def fetch_rows_for_month(year: int, month: int, limit: int = 5000):
     """Fetch rows whose timestamp falls within the given month.

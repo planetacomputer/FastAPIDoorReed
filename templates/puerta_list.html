@@ -55,7 +55,7 @@
                             <td><span class="w3-tag w3-round w3-{% if row.state == '0' %}green{% else %}red{% endif %}">{{ "ABIERTA" if row.state == "0" else "CERRADA" }}</span></td>
                              <td>
                                 <i class="{% if row.timestamp.strftime('%Y-%m-%d') == today_key %}w3-spin{% endif %} fa fa-clock-o"></i>
-                                {{ row.timestamp.strftime("%H:%M:%S") }} - {{row.contador}}
+                                {{ row.timestamp.strftime("%H:%M:%S") }}
                             </td>
                         </tr>
                             {% set previousNumber = row.contador %}
