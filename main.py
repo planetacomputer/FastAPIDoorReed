@@ -471,3 +471,11 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 bot_app = Application.builder().token(TELEGRAM_TOKEN).build()
 bot_app.add_handler(CommandHandler("start", start))
 bot_app.add_handler(CommandHandler("help", help_cmd))
+
+# --- WEBHOOK ENDPOINT ---
+@app.post("/webhook")
+async def webhook(req: Request):
+    data = await req.json()
+    update = Update.de_json(data, bot_app.bot)
+    await bot_app.process_update(update)
+    return {"ok": True}
