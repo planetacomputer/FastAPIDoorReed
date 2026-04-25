@@ -1,3 +1,4 @@
+#Python dev 3.12.3
 annotated-doc==0.0.4
 annotated-types==0.7.0
 anyio==4.13.0
@@ -18,3 +19,4 @@ websockets==16.0
 pytest>=7.0.0
 dotenv==0.9.9
 PyJWT==2.8.0
+python-telegram-bot==22.7

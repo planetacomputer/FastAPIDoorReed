@@ -20,7 +20,11 @@ import hashlib
 import base64
 import json
 import time
+import jwt
+from jwt import InvalidTokenError, ExpiredSignatureError
 from pydantic import BaseModel
+from telegram import Update
+from telegram.ext import Application, CommandHandler, ContextTypes
 
 # Set Spanish locale
 locale.setlocale(locale.LC_TIME, "es_ES.utf8")  # Linux / macOS
@@ -44,10 +48,8 @@ ws_connections: set = set()
 # and finally to a sentinel value so code doesn't crash with None.
 JWT_SECRET = os.environ.get("JWT_SECRET_KEY") or os.environ.get("TELEGRAM_TOKEN") or "change-me"
 JWT_ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 bearer_scheme = HTTPBearer()
-
-import jwt
-from jwt import InvalidTokenError, ExpiredSignatureError
 
 
 def verify_jwt_token(token: str) -> dict:
@@ -114,8 +116,9 @@ async def broadcast_payload(payload: dict):
 # fetch_rows_from_db is provided by db.py; imported above
 @app.post("/door")
 async def receive_event(event: dict, credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
-    # verify JWT from Authorization: Bearer <token>
-    verify_jwt_token(credentials.credentials)
+    # verify JWT from Authorization: Bearer <token>, if active jwt
+    if os.environ.get("ACTIVE_JWT") == "true":
+        verify_jwt_token(credentials.credentials)
     # Insert into DB on a thread to avoid blocking
     inserted = await asyncio.to_thread(insert_event_db, event)
 
@@ -444,3 +447,15 @@ def custom_docs(username: str = Depends(verify)):
 @app.get("/openapi.json", include_in_schema=False)
 def openapi(username: str = Depends(verify)):
     return app.openapi()
+
+# --- TELEGRAM BOT HANDLERS ---
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Hola 👋 Bot en webhook funcionando")
+
+async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🆘 Ayuda del bot")
+
+# --- TELEGRAM APP ---
+bot_app = Application.builder().token(TELEGRAM_TOKEN).build()
+bot_app.add_handler(CommandHandler("start", start))
+bot_app.add_handler(CommandHandler("help", help_cmd))

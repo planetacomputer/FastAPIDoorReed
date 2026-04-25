@@ -159,6 +159,8 @@ pip install PyJWT
 python -c "import jwt, time; print(jwt.encode({'sub':'tester','exp':int(time.time())+3600}, 'your-jwt-secret', algorithm='HS256'))"
 ```
 
+Take 'certificats intermédiaires' from AD.
+
 Call the endpoint (curl example)
 
 ```bash
@@ -225,10 +227,6 @@ requests.post("http://localhost:8000/event", json={"state": "0"})
 
 ## 🚀 Future Improvements
 
-- WebSocket real-time updates  
-- Authentication / security  
-- Database persistence (SQLite / PostgreSQL)  
-- Notifications (Telegram / email)  
 - Dashboard with charts  
 
 ---
