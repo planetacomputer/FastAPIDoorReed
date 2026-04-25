@@ -15,6 +15,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.openapi.docs import get_swagger_ui_html
 import secrets
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import Request
 import hmac
 import hashlib
 import base64
@@ -38,18 +39,27 @@ app = FastAPI(
 
 # Load .env for local development (if present). This makes `uvicorn main:app` pick
 # up variables from the repository `.env` file without extra flags.
-load_dotenv()
 
 # Active websocket connections
 ws_connections: set = set()
 
-# JWT protection for /door endpoint (using PyJWT)
-# prefer an explicit JWT_SECRET_KEY; fall back to TELEGRAM_TOKEN for quick testing,
-# and finally to a sentinel value so code doesn't crash with None.
-JWT_SECRET = os.environ.get("JWT_SECRET_KEY") or os.environ.get("TELEGRAM_TOKEN") or "change-me"
-JWT_ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+from config import JWT_SECRET, JWT_ALGORITHM, TELEGRAM_TOKEN, ACTIVE_JWT, ESP32_TOKEN_ADMIN_KEY
 bearer_scheme = HTTPBearer()
+
+
+async def auth_dependency(request: Request):
+    """Return HTTPAuthorizationCredentials when ACTIVE_JWT is enabled.
+
+    When ACTIVE_JWT is False this returns None and does not require the
+    Authorization header (avoids FastAPI raising 401 before the handler).
+    """
+    if ACTIVE_JWT:
+        # This will raise a 401 if no valid Authorization header is present
+        creds = await bearer_scheme(request)
+        return creds
+    return None
+# Interpret ACTIVE_JWT env var as boolean: true/1/yes enables JWT checking
+ACTIVE_JWT = str(os.environ.get("ACTIVE_JWT", "")).strip().lower() in ("1", "true", "yes")
 
 
 def verify_jwt_token(token: str) -> dict:
@@ -79,12 +89,11 @@ class TokenRequest(BaseModel):
 
 @app.post("/token")
 def issue_token(req: TokenRequest):
-    """Issue a short-lived JWT for a device. Protected by ESP32_TOKEN_ADMIN_KEY env var.
+    """Issue a short-lived JWT for a device. Protected by `ESP32_TOKEN_ADMIN_KEY` from config.
 
     This endpoint is convenient for testing; in production protect it tightly.
     """
-    admin_key = os.environ.get("ESP32_TOKEN_ADMIN_KEY", "change-me-admin")
-    if req.admin_key != admin_key:
+    if req.admin_key != ESP32_TOKEN_ADMIN_KEY:
         raise HTTPException(status_code=401, detail="bad admin key")
     exp = req.exp or int(time.time()) + 3600
     payload = {"sub": req.sub, "exp": exp}
@@ -115,9 +124,12 @@ async def broadcast_payload(payload: dict):
 
 # fetch_rows_from_db is provided by db.py; imported above
 @app.post("/door")
-async def receive_event(event: dict, credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
-    # verify JWT from Authorization: Bearer <token>, if active jwt
-    if os.environ.get("ACTIVE_JWT") == "true":
+async def receive_event(event: dict, credentials: HTTPAuthorizationCredentials | None = Depends(auth_dependency)):
+    # verify JWT from Authorization: Bearer <token>, if ACTIVE_JWT enabled
+    if ACTIVE_JWT:
+        # credentials must be provided by auth_dependency
+        if not credentials:
+            raise HTTPException(status_code=401, detail="Not authenticated")
         verify_jwt_token(credentials.credentials)
     # Insert into DB on a thread to avoid blocking
     inserted = await asyncio.to_thread(insert_event_db, event)
