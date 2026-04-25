@@ -24,6 +24,7 @@ import time
 import jwt
 from jwt import InvalidTokenError, ExpiredSignatureError
 from pydantic import BaseModel
+from contextlib import asynccontextmanager
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
@@ -31,10 +32,20 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 locale.setlocale(locale.LC_TIME, "es_ES.utf8")  # Linux / macOS
 # For Windows, use "Spanish_Spain.1252"
 
+@asynccontextmanager
+async def lifespan(app):
+    print("🚀 Inicializando bot...")
+    await bot_app.initialize()
+    await bot_app.start()
+    yield
+    print("🛑 Cerrando bot...")
+    await bot_app.stop()
+
 app = FastAPI(
     docs_url=None,      # disable /docs
     redoc_url=None,     # optional
-    openapi_url="/openapi.json"  # keep schema
+    openapi_url="/openapi.json",  # keep schema
+    lifespan=lifespan
 )
 
 # Load .env for local development (if present). This makes `uvicorn main:app` pick
@@ -475,7 +486,11 @@ bot_app.add_handler(CommandHandler("help", help_cmd))
 # --- WEBHOOK ENDPOINT ---
 @app.post("/webhook")
 async def webhook(req: Request):
-    data = await req.json()
-    update = Update.de_json(data, bot_app.bot)
-    await bot_app.process_update(update)
-    return {"ok": True}
+    try:
+        data = await req.json()
+        update = Update.de_json(data, bot_app.bot)
+        await bot_app.process_update(update)
+        return {"ok": True}
+    except Exception as e:
+        print(f"💥 Error: {e}")
+        return {"ok": True}
